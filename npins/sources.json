@@ -1,0 +1,17 @@
+{
+  "pins": {
+    "nixos-24-11": {
+      "type": "Channel",
+      "name": "nixos-24.11",
+      "url": "https://releases.nixos.org/nixos/24.11/nixos-24.11.716947.26d499fc9f1d/nixexprs.tar.xz",
+      "hash": "01ssp6v1h64fahbzjr4zcg9pacr9sfx9bahyr9j6iarxghq85ap7"
+    },
+    "nixpkgs-unstable": {
+      "type": "Channel",
+      "name": "nixpkgs-unstable",
+      "url": "https://releases.nixos.org/nixpkgs/nixpkgs-25.05pre785333.ebe4301cbd8f/nixexprs.tar.xz",
+      "hash": "16z7hjabd181i08hgg82y7777v5iv87g3y4md6zvx4i4c49ph4hw"
+    }
+  },
+  "version": 3
+}
