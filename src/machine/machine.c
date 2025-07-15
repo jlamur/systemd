@@ -234,6 +234,33 @@ int machine_save(Machine *m) {
                 fputc('\n', f);
         }
 
+        if (m->vsock_cid)
+                fprintf(f, "VSOCK_CID=%u\n", m->vsock_cid);
+
+        if (m->ssh_private_key_path) {
+                _cleanup_free_ char *escaped = NULL;
+
+                escaped = cescape(m->ssh_private_key_path);
+                if (!escaped) {
+                        r = -ENOMEM;
+                        goto fail;
+                }
+
+                fprintf(f, "SSH_PRIVATE_KEY_PATH=%s\n", escaped);
+        }
+
+        if (m->ssh_address) {
+                _cleanup_free_ char *escaped = NULL;
+
+                escaped = cescape(m->ssh_address);
+                if (!escaped) {
+                        r = -ENOMEM;
+                        goto fail;
+                }
+
+                fprintf(f, "SSH_ADDRESS=%s\n", escaped);
+        }
+
         r = fflush_and_check(f);
         if (r < 0)
                 goto fail;
@@ -278,7 +305,7 @@ static void machine_unlink(Machine *m) {
 }
 
 int machine_load(Machine *m) {
-        _cleanup_free_ char *realtime = NULL, *monotonic = NULL, *id = NULL, *leader = NULL, *class = NULL, *netif = NULL;
+        _cleanup_free_ char *realtime = NULL, *monotonic = NULL, *id = NULL, *leader = NULL, *class = NULL, *netif = NULL, *vsock_cid = NULL;
         int r;
 
         assert(m);
@@ -287,16 +314,19 @@ int machine_load(Machine *m) {
                 return 0;
 
         r = parse_env_file(NULL, m->state_file,
-                           "SCOPE",     &m->unit,
-                           "SCOPE_JOB", &m->scope_job,
-                           "SERVICE",   &m->service,
-                           "ROOT",      &m->root_directory,
-                           "ID",        &id,
-                           "LEADER",    &leader,
-                           "CLASS",     &class,
-                           "REALTIME",  &realtime,
-                           "MONOTONIC", &monotonic,
-                           "NETIF",     &netif);
+                           "SCOPE",                &m->unit,
+                           "SCOPE_JOB",            &m->scope_job,
+                           "SERVICE",              &m->service,
+                           "ROOT",                 &m->root_directory,
+                           "ID",                   &id,
+                           "LEADER",               &leader,
+                           "CLASS",                &class,
+                           "REALTIME",             &realtime,
+                           "MONOTONIC",            &monotonic,
+                           "NETIF",                &netif,
+                           "VSOCK_CID",            &vsock_cid,
+                           "SSH_PRIVATE_KEY_PATH", &m->ssh_private_key_path,
+                           "SSH_ADDRESS",          &m->ssh_address);
         if (r == -ENOENT)
                 return 0;
         if (r < 0)
@@ -357,6 +387,9 @@ int machine_load(Machine *m) {
                 free_and_replace(m->netif, ni);
                 m->n_netif = nr;
         }
+
+        if (vsock_cid)
+                (void) safe_atou(vsock_cid, &m->vsock_cid);
 
         return r;
 }
