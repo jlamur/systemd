@@ -709,6 +709,9 @@ int machine_openpt(Machine *m, int flags, char **ret_slave) {
         case MACHINE_HOST:
                 return openpt_allocate(flags, ret_slave);
 
+        case MACHINE_VM:
+                return openpt_allocate(flags, ret_slave);
+
         case MACHINE_CONTAINER:
                 if (!pidref_is_set(&m->leader))
                         return -EINVAL;
@@ -750,6 +753,57 @@ static int machine_bus_new(Machine *m, sd_bus_error *error, sd_bus **ret) {
         case MACHINE_HOST:
                 *ret = NULL;
                 return 0;
+
+        case MACHINE_VM: {
+                _cleanup_(sd_bus_close_unrefp) sd_bus *bus = NULL;
+                _cleanup_free_ char *ssh_escaped = NULL;
+                char *address;
+                const char *ssh;
+
+                // FIXME: The private key might get lost, eg. when systemd-machined restarts.
+                if (!m->ssh_private_key_path || !m->ssh_address) {
+                        log_debug("machine has no ssh private key or address");
+                        return -EINVAL;
+                }
+
+                r = sd_bus_new(&bus);
+                if (r < 0)
+                        return log_debug_errno(r, "Failed to allocate new DBus: %m");
+
+                ssh = secure_getenv("SYSTEMD_SSH") ?: "ssh";
+                ssh_escaped = bus_address_escape(ssh);
+                if (!ssh_escaped)
+                        return -ENOMEM;
+
+                address = strjoin(
+                        "unixexec:path=", ssh_escaped,
+                        /* -x: Disable X11 forwarding
+                         * -T: Disable PTY allocation */
+                        ",argv1=-xT",
+                        ",argv2=-o,argv3=IdentitiesOnly yes",
+                        ",argv4=-o,argv5=IdentityFile=", m->ssh_private_key_path,
+                        ",argv6=--",
+                        ",argv7=root@", m->ssh_address,
+                        ",argv8=systemd-stdio-bridge"
+                );
+                if (!address)
+                        return -ENOMEM;
+
+                bus->address = address;
+                bus->bus_client = true;
+                bus->trusted = true;
+                bus->runtime_scope = RUNTIME_SCOPE_SYSTEM;
+                bus->is_local = false;
+
+                r = sd_bus_start(bus);
+                if (r == -ENOENT)
+                        return sd_bus_error_set_errnof(error, r, "There is no system bus in vm %s.", m->name);
+                if (r < 0)
+                        return r;
+
+                *ret = TAKE_PTR(bus);
+                return 0;
+        }
 
         case MACHINE_CONTAINER: {
                 _cleanup_(sd_bus_close_unrefp) sd_bus *bus = NULL;
@@ -845,25 +899,39 @@ int machine_start_shell(
         if (pty_fd < 0)
                 return log_debug_errno(pty_fd, "Failed to open terminal: %m");
 
+        log_debug("AAAAA!!! ======");
         r = machine_bus_new(m, error, &allocated_bus);
         if (r < 0)
                 return log_debug_errno(r, "Failed to create DBus to machine: %m");
 
+        _cleanup_(sd_bus_error_free) sd_bus_error error2 = SD_BUS_ERROR_NULL;
+
+        r = bus_call_method(allocated_bus, bus_login_mgr, "PowerOff", &error2, /* reply= */ NULL, "b", false);
+        if (r < 0)
+                return log_debug_errno(r, "FAILED TO POWEROFF :-(");
+
+
+        log_debug("POWEROFF OK!!!! :-)");
+        return 0;
+        log_debug("BLIP!!! ======");
         container_bus = allocated_bus ?: m->manager->bus;
         r = bus_message_new_method_call(container_bus, &tm, bus_systemd_mgr, "StartTransientUnit");
         if (r < 0)
                 return r;
+        log_debug("BLOP!!! ======");
 
         /* Name and mode */
         unit = strjoina("container-shell@", p, ".service");
         r = sd_bus_message_append(tm, "ss", unit, "fail");
         if (r < 0)
                 return r;
+        log_debug("BLURP!!! ======");
 
         /* Properties */
         r = sd_bus_message_open_container(tm, 'a', "(sv)");
         if (r < 0)
                 return r;
+        log_debug("BIIIIZ!!! ======");
 
         description = strjoina("Shell for User ", user);
         r = sd_bus_message_append(tm,
@@ -883,10 +951,12 @@ int machine_start_shell(
                                   "WorkingDirectory", "s", "-~");
         if (r < 0)
                 return r;
+        log_debug("BAAAAZ!!! =====");
 
         r = sd_bus_message_append(tm, "(sv)", "User", "s", user);
         if (r < 0)
                 return r;
+        log_debug("BUZZZZ!!! =====");
 
         if (!strv_isempty(env)) {
                 r = sd_bus_message_open_container(tm, 'r', "sv");
@@ -914,15 +984,20 @@ int machine_start_shell(
                         return r;
         }
 
+        log_debug("BOUEP!!! =====");
+
         /* Exec container */
         r = sd_bus_message_open_container(tm, 'r', "sv");
         if (r < 0)
                 return r;
 
+        log_debug("TOTO!!! =====");
+
         r = sd_bus_message_append(tm, "s", "ExecStart");
         if (r < 0)
                 return r;
 
+        log_debug("TOTO2!!! =====");
         r = sd_bus_message_open_container(tm, 'v', "a(sasb)");
         if (r < 0)
                 return r;
@@ -972,9 +1047,12 @@ int machine_start_shell(
         if (r < 0)
                 return r;
 
+        log_debug("PIKAPIKA!!! =====");
+
         r = sd_bus_call(container_bus, tm, 0, error, NULL);
         if (r < 0)
                 return r;
+        log_debug("POUET!!! =====");
 
         return 0;
 }
